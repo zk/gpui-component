@@ -1119,14 +1119,15 @@ impl Node {
         };
 
         match self {
-            Node::Root { children } => div()
-                .id("div")
-                .children(
-                    children
-                        .into_iter()
-                        .map(move |node| node.render_block(options, node_cx, window, cx)),
-                )
-                .into_any_element(),
+            Node::Root { children } => {
+                let len = children.len();
+                div()
+                    .id("div")
+                    .children(children.into_iter().enumerate().map(move |(ix, node)| {
+                        node.render_block(options.is_last(ix + 1 == len), node_cx, window, cx)
+                    }))
+                    .into_any_element()
+            }
             Node::Paragraph(paragraph) => div()
                 .id("p")
                 .pb(mb)
