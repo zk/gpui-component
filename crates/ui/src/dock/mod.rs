@@ -257,6 +257,35 @@ impl DockItem {
         Self::new_tabs(new_items, active_ix, dock_area, window, cx)
     }
 
+    /// Like `tabs`, but allows closing the last panel.
+    ///
+    /// Unlike using Tiles layout, this only affects closability and does not
+    /// trigger Tiles-specific cleanup when the panel becomes empty.
+    pub fn tabs_closable(
+        items: Vec<Arc<dyn PanelView>>,
+        active_ix: Option<usize>,
+        dock_area: &WeakEntity<DockArea>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
+        let active_ix = active_ix.unwrap_or(0);
+        let tab_panel = cx.new(|cx| {
+            let mut tab_panel = TabPanel::new(None, dock_area.clone(), window, cx);
+            tab_panel.set_allow_close_last(true);
+            for item in items.iter() {
+                tab_panel.add_panel(item.clone(), window, cx)
+            }
+            tab_panel.active_ix = active_ix;
+            tab_panel
+        });
+
+        Self::Tabs {
+            items,
+            active_ix,
+            view: tab_panel,
+        }
+    }
+
     pub fn tab<P: Panel>(
         item: Entity<P>,
         dock_area: &WeakEntity<DockArea>,
@@ -901,8 +930,8 @@ impl DockArea {
                     },
                 ));
             }
-            DockItem::Tabs { .. } => {
-                // We subscribe to the tab panel event in StackPanel's insert_panel
+            DockItem::Tabs { view, .. } => {
+                self.subscribe_panel(view, window, cx);
             }
             DockItem::Tiles { .. } => {
                 // We subscribe to the tab panel event in Tiles's [`add_item`](Tiles::add_item)
@@ -1027,7 +1056,13 @@ impl Render for DockArea {
             )
             .map(|this| {
                 if let Some(zoom_view) = self.zoom_view.clone() {
-                    this.child(zoom_view)
+                    this.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .size_full()
+                            .child(zoom_view),
+                    )
                 } else {
                     match &self.items {
                         DockItem::Tiles { view, .. } => {
