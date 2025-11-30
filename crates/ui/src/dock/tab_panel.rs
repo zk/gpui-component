@@ -84,6 +84,9 @@ pub struct TabPanel {
     will_split_placement: Option<Placement>,
     /// Is TabPanel used in Tiles.
     in_tiles: bool,
+    /// Allow closing the last panel. Unlike `in_tiles`, this only affects closability
+    /// without triggering Tiles-specific cleanup when the panel becomes empty.
+    allow_close_last: bool,
 }
 
 impl Panel for TabPanel {
@@ -103,8 +106,8 @@ impl Panel for TabPanel {
         }
 
         // 1. When is the final panel in the dock, it will not able to close.
-        // 2. When is in the Tiles, it will always able to close (by active panel state).
-        if !self.draggable(cx) && !self.in_tiles {
+        // 2. When is in the Tiles or allow_close_last is set, it will always able to close.
+        if !self.draggable(cx) && !self.in_tiles && !self.allow_close_last {
             return false;
         }
 
@@ -177,12 +180,18 @@ impl TabPanel {
             collapsed: false,
             closable: true,
             in_tiles: false,
+            allow_close_last: false,
         }
     }
 
     /// Mark the TabPanel as being used in Tiles.
     pub(super) fn set_in_tiles(&mut self, in_tiles: bool) {
         self.in_tiles = in_tiles;
+    }
+
+    /// Allow closing the last panel without triggering Tiles cleanup.
+    pub(super) fn set_allow_close_last(&mut self, allow: bool) {
+        self.allow_close_last = allow;
     }
 
     pub(super) fn set_parent(&mut self, view: WeakEntity<StackPanel>) {
