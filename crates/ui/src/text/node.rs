@@ -1209,6 +1209,7 @@ impl Node {
             Node::CodeBlock(code_block) => code_block.render(&options, node_cx, window, cx),
             Node::Table { .. } => Self::render_table(self, node_cx, window, cx).into_any_element(),
             Node::Divider => div()
+                .pt(px(8.))
                 .pb(mb)
                 .child(div().id("divider").bg(cx.theme().border).h(px(2.)))
                 .into_any_element(),
