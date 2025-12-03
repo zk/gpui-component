@@ -254,6 +254,26 @@ impl TabPanel {
         self.add_panel_with_active(panel, true, window, cx);
     }
 
+    /// Activate an existing panel by its entity ID.
+    /// Returns true if the panel was found and activated.
+    pub fn activate_panel_by_entity_id(
+        &mut self,
+        entity_id: gpui::EntityId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if let Some(ix) = self
+            .panels
+            .iter()
+            .position(|p| p.view().entity_id() == entity_id)
+        {
+            self.set_active_ix(ix, window, cx);
+            true
+        } else {
+            false
+        }
+    }
+
     fn add_panel_with_active(
         &mut self,
         panel: Arc<dyn PanelView>,
