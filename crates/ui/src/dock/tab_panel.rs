@@ -87,6 +87,8 @@ pub struct TabPanel {
     /// Allow closing the last panel. Unlike `in_tiles`, this only affects closability
     /// without triggering Tiles-specific cleanup when the panel becomes empty.
     allow_close_last: bool,
+    /// Override panel style for this TabPanel. If None, uses DockArea's panel_style.
+    panel_style: Option<PanelStyle>,
 }
 
 impl Panel for TabPanel {
@@ -181,6 +183,7 @@ impl TabPanel {
             closable: true,
             in_tiles: false,
             allow_close_last: false,
+            panel_style: None,
         }
     }
 
@@ -192,6 +195,11 @@ impl TabPanel {
     /// Allow closing the last panel without triggering Tiles cleanup.
     pub(super) fn set_allow_close_last(&mut self, allow: bool) {
         self.allow_close_last = allow;
+    }
+
+    /// Set panel style override for this TabPanel.
+    pub fn set_panel_style(&mut self, style: PanelStyle) {
+        self.panel_style = Some(style);
     }
 
     pub(super) fn set_parent(&mut self, view: WeakEntity<StackPanel>) {
@@ -472,6 +480,11 @@ impl TabPanel {
         let zoomed = self.zoomed;
         let view = cx.entity().clone();
         let zoomable_toolbar_visible = state.zoomable.map_or(false, |v| v.toolbar_visible());
+        let toolbar_visible = self
+            .dock_area
+            .upgrade()
+            .map(|d| d.read(cx).tabbar_toolbar_visible)
+            .unwrap_or(true);
 
         h_flex()
             .gap_1()
@@ -509,38 +522,40 @@ impl TabPanel {
                     this
                 }
             })
-            .child(
-                Button::new("menu")
-                    .icon(IconName::Ellipsis)
-                    .xsmall()
-                    .ghost()
-                    .tab_stop(false)
-                    .dropdown_menu({
-                        let zoomable = state.zoomable.map_or(false, |v| v.menu_visible());
-                        let closable = state.closable;
+            .when(toolbar_visible, |this| {
+                this.child(
+                    Button::new("menu")
+                        .icon(IconName::Ellipsis)
+                        .xsmall()
+                        .ghost()
+                        .tab_stop(false)
+                        .dropdown_menu({
+                            let zoomable = state.zoomable.map_or(false, |v| v.menu_visible());
+                            let closable = state.closable;
 
-                        move |menu, window, cx| {
-                            view.update(cx, |this, cx| {
-                                this.dropdown_menu(menu, window, cx)
-                                    .separator()
-                                    .menu_with_disabled(
-                                        if zoomed {
-                                            t!("Dock.Zoom Out")
-                                        } else {
-                                            t!("Dock.Zoom In")
-                                        },
-                                        Box::new(ToggleZoom),
-                                        !zoomable,
-                                    )
-                                    .when(closable, |this| {
-                                        this.separator()
-                                            .menu(t!("Dock.Close"), Box::new(ClosePanel))
-                                    })
-                            })
-                        }
-                    })
-                    .anchor(Corner::TopRight),
-            )
+                            move |menu, window, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.dropdown_menu(menu, window, cx)
+                                        .separator()
+                                        .menu_with_disabled(
+                                            if zoomed {
+                                                t!("Dock.Zoom Out")
+                                            } else {
+                                                t!("Dock.Zoom In")
+                                            },
+                                            Box::new(ToggleZoom),
+                                            !zoomable,
+                                        )
+                                        .when(closable, |this| {
+                                            this.separator()
+                                                .menu(t!("Dock.Close"), Box::new(ClosePanel))
+                                        })
+                                })
+                            }
+                        })
+                        .anchor(Corner::TopRight),
+                )
+            })
     }
 
     fn render_dock_toggle_button(
@@ -647,10 +662,11 @@ impl TabPanel {
 
         let is_bottom_dock = bottom_dock_button.is_some();
 
-        let panel_style = dock_area.read(cx).panel_style;
+        let panel_style = self.panel_style.unwrap_or(dock_area.read(cx).panel_style);
+        let suffix_close_visible = dock_area.read(cx).tabbar_suffix_close_visible;
         let visible_panels = self.visible_panels(cx).collect::<Vec<_>>();
 
-        if visible_panels.len() == 1 && panel_style == PanelStyle::default() {
+        if visible_panels.len() == 1 && panel_style == PanelStyle::Auto {
             let panel = visible_panels.get(0).unwrap();
 
             if !panel.visible(cx) {
@@ -765,6 +781,9 @@ impl TabPanel {
                                 this.child(panel.title(window, cx))
                             }
                         })
+                        .when_some(panel.title_suffix(window, cx), |this, suffix| {
+                            this.suffix(suffix)
+                        })
                         .selected(active)
                         .on_click(cx.listener({
                             let is_collapsed = self.collapsed;
@@ -846,10 +865,12 @@ impl TabPanel {
                         .bg(cx.theme().tab_bar)
                         .px_2()
                         .gap_1()
-                        .children(
-                            self.active_panel(cx)
-                                .and_then(|panel| panel.title_suffix(window, cx)),
-                        )
+                        .when(suffix_close_visible, |this| {
+                            this.children(
+                                self.active_panel(cx)
+                                    .and_then(|panel| panel.title_suffix(window, cx)),
+                            )
+                        })
                         .child(self.render_toolbar(state, window, cx))
                         .when_some(right_dock_button, |this, btn| this.child(btn)),
                 )
@@ -1166,21 +1187,36 @@ impl TabPanel {
             return;
         }
         if let Some(panel) = self.active_panel(cx) {
-            self.remove_panel(panel, window, cx);
-        }
+            // Call before_close and only remove if it returns true
+            let before_close_task = panel.before_close(window, cx);
+            let this = cx.entity().downgrade();
+            let in_tiles = self.in_tiles;
+            let dock_area = self.dock_area.clone();
+            cx.spawn_in(window, async move |_, cx| {
+                let allow_close = before_close_task.await;
+                if allow_close {
+                    _ = cx.update(|window, cx| {
+                        _ = this.update(cx, |this, cx| {
+                            this.remove_panel(panel.clone(), window, cx);
 
-        // Remove self from the parent DockArea.
-        // This is ensure to remove from Tiles
-        if self.panels.is_empty() && self.in_tiles {
-            let tab_panel = Arc::new(cx.entity());
-            window.defer(cx, {
-                let dock_area = self.dock_area.clone();
-                move |window, cx| {
-                    _ = dock_area.update(cx, |this, cx| {
-                        this.remove_panel_from_all_docks(tab_panel, window, cx);
+                            // Remove self from the parent DockArea.
+                            // This is ensure to remove from Tiles
+                            if this.panels.is_empty() && in_tiles {
+                                let tab_panel = Arc::new(cx.entity());
+                                window.defer(cx, {
+                                    let dock_area = dock_area.clone();
+                                    move |window, cx| {
+                                        _ = dock_area.update(cx, |this, cx| {
+                                            this.remove_panel_from_all_docks(tab_panel, window, cx);
+                                        });
+                                    }
+                                });
+                            }
+                        });
                     });
                 }
-            });
+            })
+            .detach();
         }
     }
 

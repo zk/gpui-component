@@ -69,6 +69,13 @@ pub struct DockArea {
     /// The panel style, default is [`PanelStyle::Default`](PanelStyle::Default).
     pub(crate) panel_style: PanelStyle,
 
+    /// Whether to show the toolbar (three dots menu) in the tab bar, default is `true`.
+    pub(crate) tabbar_toolbar_visible: bool,
+
+    /// Whether to show the close button in the tab bar suffix area, default is `true`.
+    /// When false, the close button only appears in individual tabs.
+    pub(crate) tabbar_suffix_close_visible: bool,
+
     _subscriptions: Vec<Subscription>,
 }
 
@@ -286,6 +293,16 @@ impl DockItem {
         }
     }
 
+    /// Set panel style for this DockItem (only applies to Tabs variant).
+    pub fn with_panel_style(self, style: PanelStyle, cx: &mut App) -> Self {
+        if let DockItem::Tabs { view, .. } = &self {
+            view.update(cx, |tab_panel, _| {
+                tab_panel.set_panel_style(style);
+            });
+        }
+        self
+    }
+
     pub fn tab<P: Panel>(
         item: Entity<P>,
         dock_area: &WeakEntity<DockArea>,
@@ -494,6 +511,8 @@ impl DockArea {
             bottom_dock: None,
             locked: false,
             panel_style: PanelStyle::default(),
+            tabbar_toolbar_visible: true,
+            tabbar_suffix_close_visible: true,
             _subscriptions: vec![],
         };
 
@@ -737,6 +756,22 @@ impl DockArea {
     /// Set the visibility of the toggle button.
     pub fn set_toggle_button_visible(&mut self, visible: bool, _: &mut Context<Self>) {
         self.toggle_button_visible = visible;
+    }
+
+    /// Set the visibility of the toolbar (three dots menu) in tab bars.
+    pub fn set_tabbar_toolbar_visible(&mut self, visible: bool, _: &mut Context<Self>) {
+        self.tabbar_toolbar_visible = visible;
+    }
+
+    /// Set the visibility of the close button in the tab bar suffix area.
+    /// When false, close buttons only appear in individual tabs.
+    pub fn set_tabbar_suffix_close_visible(&mut self, visible: bool, _: &mut Context<Self>) {
+        self.tabbar_suffix_close_visible = visible;
+    }
+
+    /// Set the panel style for the dock area.
+    pub fn set_panel_style(&mut self, style: PanelStyle, _: &mut Context<Self>) {
+        self.panel_style = style;
     }
 
     /// Add a panel item to the dock area at the given placement.

@@ -1,7 +1,15 @@
-use crate::{button::Button, dock::TabPanel, menu::PopupMenu};
+use crate::{
+    IconName, Sizable,
+    button::{Button, ButtonVariants as _},
+    dock::TabPanel,
+    menu::PopupMenu,
+};
+
+use super::ClosePanel;
 use gpui::{
     AnyElement, AnyView, App, AppContext as _, Context, Entity, EntityId, EventEmitter,
-    FocusHandle, Focusable, Global, Hsla, IntoElement, Render, SharedString, WeakEntity, Window,
+    FocusHandle, Focusable, Global, Hsla, IntoElement, Render, SharedString, Task, WeakEntity,
+    Window,
 };
 use rust_i18n::t;
 use std::{collections::HashMap, sync::Arc};
@@ -75,15 +83,25 @@ pub trait Panel: EventEmitter<PanelEvent> + Render + Focusable {
         None
     }
 
-    /// The suffix of the panel title, default is `None`.
+    /// The suffix of the panel title, default is a close button.
     ///
     /// This is used to add a suffix element to the panel title.
+    /// Override to customize (e.g., show dirty indicator icon instead of close).
+    /// Return `None` to hide the suffix entirely.
     fn title_suffix(
         &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
     ) -> Option<impl IntoElement> {
-        None::<gpui::Div>
+        Some(
+            Button::new("close")
+                .icon(IconName::Close)
+                .ghost()
+                .xsmall()
+                .on_click(|_, window, cx| {
+                    window.dispatch_action(Box::new(ClosePanel), cx);
+                }),
+        )
     }
 
     /// Whether the panel can be closed, default is `true`.
@@ -133,6 +151,14 @@ pub trait Panel: EventEmitter<PanelEvent> + Render + Focusable {
     /// When this Panel is removed from a TabPanel, this will be called.
     fn on_removed(&mut self, window: &mut Window, cx: &mut Context<Self>) {}
 
+    /// Called before the panel is closed. Return true to allow close, false to cancel.
+    ///
+    /// This is an async hook that allows panels to show confirmation dialogs before closing.
+    /// The default implementation always allows close.
+    fn before_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Task<bool> {
+        Task::ready(true)
+    }
+
     /// The addition dropdown menu of the panel, default is `None`.
     fn dropdown_menu(
         &mut self,
@@ -179,6 +205,7 @@ pub trait PanelView: 'static + Send + Sync {
     fn set_zoomed(&self, zoomed: bool, window: &mut Window, cx: &mut App);
     fn on_added_to(&self, tab_panel: WeakEntity<TabPanel>, window: &mut Window, cx: &mut App);
     fn on_removed(&self, window: &mut Window, cx: &mut App);
+    fn before_close(&self, window: &mut Window, cx: &mut App) -> Task<bool>;
     fn dropdown_menu(&self, menu: PopupMenu, window: &mut Window, cx: &mut App) -> PopupMenu;
     fn toolbar_buttons(&self, window: &mut Window, cx: &mut App) -> Option<Vec<Button>>;
     fn view(&self) -> AnyView;
@@ -245,6 +272,10 @@ impl<T: Panel> PanelView for Entity<T> {
 
     fn on_removed(&self, window: &mut Window, cx: &mut App) {
         self.update(cx, |this, cx| this.on_removed(window, cx));
+    }
+
+    fn before_close(&self, window: &mut Window, cx: &mut App) -> Task<bool> {
+        self.update(cx, |this, cx| this.before_close(window, cx))
     }
 
     fn dropdown_menu(&self, menu: PopupMenu, window: &mut Window, cx: &mut App) -> PopupMenu {
