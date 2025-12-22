@@ -222,6 +222,11 @@ impl TabPanel {
         }
     }
 
+    /// Return all panels in this TabPanel.
+    pub fn panels(&self) -> &[Arc<dyn PanelView>] {
+        &self.panels
+    }
+
     fn set_active_ix(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         if ix == self.active_ix {
             return;
