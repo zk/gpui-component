@@ -342,12 +342,17 @@ impl Element for Inline {
         });
 
         if !is_selection {
+            // Get callbacks from global state (set during TextView::paint)
+            let on_link_click = GlobalState::global(cx).on_link_click();
+            let on_link_right_click = GlobalState::global(cx).on_link_right_click();
+
             // click to open link
             window.on_mouse_event({
                 let links = self.links.clone();
                 let text_layout = text_layout.clone();
+                let on_link_click = on_link_click.clone();
 
-                move |event: &MouseUpEvent, phase, _, cx| {
+                move |event: &MouseUpEvent, phase, window, cx| {
                     if !bounds.contains(&event.position) || !phase.bubble() {
                         return;
                     }
@@ -356,10 +361,40 @@ impl Element for Inline {
                         Self::link_for_position(&text_layout, &links, event.position)
                     {
                         cx.stop_propagation();
-                        cx.open_url(&link.url);
+                        if let Some(on_click) = &on_link_click {
+                            on_click(&link.url, window, cx);
+                        } else {
+                            cx.open_url(&link.url);
+                        }
                     }
                 }
             });
+
+            // right-click on link
+            if on_link_right_click.is_some() {
+                window.on_mouse_event({
+                    let links = self.links.clone();
+                    let text_layout = text_layout.clone();
+
+                    move |event: &gpui::MouseDownEvent, phase, window, cx| {
+                        if !bounds.contains(&event.position)
+                            || !phase.bubble()
+                            || event.button != gpui::MouseButton::Right
+                        {
+                            return;
+                        }
+
+                        if let Some(link) =
+                            Self::link_for_position(&text_layout, &links, event.position)
+                        {
+                            cx.stop_propagation();
+                            if let Some(on_right_click) = &on_link_right_click {
+                                on_right_click(&link.url, event.position, window, cx);
+                            }
+                        }
+                    }
+                });
+            }
         }
     }
 }

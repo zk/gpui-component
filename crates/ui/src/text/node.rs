@@ -652,8 +652,9 @@ impl Paragraph {
         // Add the last text node
         if text.len() > 0 {
             self.state.lock().unwrap().set_text(text.into());
-            child_nodes
-                .push(Inline::new(ix, self.state.clone(), links, highlights).into_any_element());
+            child_nodes.push(
+                Inline::new(ix, self.state.clone(), links, highlights).into_any_element(),
+            );
         }
 
         div().id(span.unwrap_or_default()).children(child_nodes)

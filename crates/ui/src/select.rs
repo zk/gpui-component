@@ -274,9 +274,20 @@ where
         &mut self,
         ix: Option<IndexPath>,
         _: &mut Window,
-        _: &mut Context<ListState<Self>>,
+        cx: &mut Context<ListState<Self>>,
     ) {
         self.selected_index = ix;
+
+        // Emit hover event when selection changes (for preview behavior)
+        let hovered_value = ix
+            .and_then(|ix| self.delegate.item(ix))
+            .map(|item| item.value().clone());
+        let state = self.state.clone();
+        cx.defer(move |cx| {
+            _ = state.update(cx, |_, cx| {
+                cx.emit(SelectEvent::Hover(hovered_value));
+            });
+        });
     }
 
     fn render_empty(
@@ -304,6 +315,9 @@ where
 /// Events emitted by the [`SelectState`].
 pub enum SelectEvent<D: SelectDelegate + 'static> {
     Confirm(Option<<D::Item as SelectItem>::Value>),
+    /// Emitted when the user hovers over an item in the select dropdown.
+    /// Contains the value of the hovered item, or None when hover ends.
+    Hover(Option<<D::Item as SelectItem>::Value>),
 }
 
 struct SelectOptions {
@@ -671,6 +685,8 @@ where
         }
 
         self.open = false;
+        // Emit Hover(None) when dropdown closes without selection
+        cx.emit(SelectEvent::Hover(None));
         cx.notify();
     }
 

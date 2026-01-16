@@ -1041,6 +1041,42 @@ impl DockArea {
         cx.notify();
     }
 
+    /// Zoom the right dock panel to fill the entire dock area.
+    ///
+    /// This will display the right dock's TabPanel as the zoom view,
+    /// hiding the main content and other docks until unzoomed.
+    pub fn zoom_right_dock(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(right_dock) = &self.right_dock {
+            let right_dock = right_dock.read(cx);
+            if let DockItem::Tabs { view, .. } = &right_dock.panel {
+                self.zoom_view = Some(view.clone().into());
+                cx.notify();
+            }
+        }
+    }
+
+    /// Zoom the left dock panel to fill the entire dock area.
+    pub fn zoom_left_dock(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(left_dock) = &self.left_dock {
+            let left_dock = left_dock.read(cx);
+            if let DockItem::Tabs { view, .. } = &left_dock.panel {
+                self.zoom_view = Some(view.clone().into());
+                cx.notify();
+            }
+        }
+    }
+
+    /// Zoom the bottom dock panel to fill the entire dock area.
+    pub fn zoom_bottom_dock(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(bottom_dock) = &self.bottom_dock {
+            let bottom_dock = bottom_dock.read(cx);
+            if let DockItem::Tabs { view, .. } = &bottom_dock.panel {
+                self.zoom_view = Some(view.clone().into());
+                cx.notify();
+            }
+        }
+    }
+
     fn render_items(&self, _window: &mut Window, _cx: &mut Context<Self>) -> AnyElement {
         match &self.items {
             DockItem::Split { view, .. } => view.clone().into_any_element(),

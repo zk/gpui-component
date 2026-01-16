@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
@@ -81,6 +82,11 @@ impl RenderOnce for TextViewElement {
 /// - As a Markdown editor or viewer (If you want to like this, you must fork your version).
 /// - As a HTML viewer, we not support CSS, we only support basic HTML tags for used to as a content reader.
 ///
+/// Callback type for link click events (not thread-safe, UI thread only).
+pub type OnLinkClickCallback = Rc<dyn Fn(&str, &mut Window, &mut App)>;
+/// Callback type for link right-click events (not thread-safe, UI thread only).
+pub type OnLinkRightClickCallback = Rc<dyn Fn(&str, Point<Pixels>, &mut Window, &mut App)>;
+
 /// See also [`MarkdownElement`], [`HtmlElement`]
 #[derive(Clone)]
 pub struct TextView {
@@ -91,6 +97,8 @@ pub struct TextView {
     style: StyleRefinement,
     selectable: bool,
     scrollable: bool,
+    on_link_click: Option<OnLinkClickCallback>,
+    on_link_right_click: Option<OnLinkRightClickCallback>,
 }
 
 #[derive(PartialEq)]
@@ -419,6 +427,8 @@ impl TextView {
             state,
             selectable: false,
             scrollable: false,
+            on_link_click: None,
+            on_link_right_click: None,
         }
     }
 
@@ -449,6 +459,8 @@ impl TextView {
             raw: html,
             selectable: false,
             scrollable: false,
+            on_link_click: None,
+            on_link_right_click: None,
         }
     }
 
@@ -500,6 +512,29 @@ impl TextView {
     /// This mode is suitable for small content, such as a few lines of text, a label, etc.
     pub fn scrollable(mut self, scrollable: bool) -> Self {
         self.scrollable = scrollable;
+        self
+    }
+
+    /// Set a custom handler for link clicks.
+    ///
+    /// If set, this handler will be called instead of the default behavior
+    /// (opening the URL in the system browser).
+    pub fn on_link_click(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_link_click = Some(Rc::new(handler));
+        self
+    }
+
+    /// Set a custom handler for link right-clicks.
+    ///
+    /// The handler receives the link URL and the mouse position.
+    pub fn on_link_right_click(
+        mut self,
+        handler: impl Fn(&str, Point<Pixels>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_link_right_click = Some(Rc::new(handler));
         self
     }
 
@@ -663,11 +698,22 @@ impl Element for TextView {
             state.is_selectable = is_selectable;
         });
 
-        GlobalState::global_mut(cx)
-            .text_view_state_stack
-            .push(self.state.clone());
+        // Push state and callbacks onto global stacks for access during rendering
+        {
+            let global = GlobalState::global_mut(cx);
+            global.text_view_state_stack.push(self.state.clone());
+            global.on_link_click_stack.push(self.on_link_click.clone());
+            global
+                .on_link_right_click_stack
+                .push(self.on_link_right_click.clone());
+        }
         request_layout.paint(window, cx);
-        GlobalState::global_mut(cx).text_view_state_stack.pop();
+        {
+            let global = GlobalState::global_mut(cx);
+            global.text_view_state_stack.pop();
+            global.on_link_click_stack.pop();
+            global.on_link_right_click_stack.pop();
+        }
 
         if self.selectable {
             let is_selecting = self.state.read(cx).is_selecting;
